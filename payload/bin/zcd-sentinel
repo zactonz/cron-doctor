@@ -1,0 +1,79 @@
+#!/bin/sh
+
+set -u
+
+ZCD_SENTINEL_VERSION="1.0.0"
+
+SCRIPT_PATH=$0
+
+case "$SCRIPT_PATH" in
+    /*) ;;
+    *) SCRIPT_PATH="$(pwd)/$SCRIPT_PATH" ;;
+esac
+
+BIN_DIR=$(dirname "$SCRIPT_PATH")
+BASE_DIR=$(dirname "$BIN_DIR")
+ENTRY="$BASE_DIR/lib/sentinel.php"
+
+if [ ! -f "$ENTRY" ]; then
+    printf 'zcd-sentinel: %s is missing, reinstall the runner from Cron Doctor settings\n' "$ENTRY" >&2
+    exit 78
+fi
+
+is_usable_php() {
+    [ -x "$1" ] || return 1
+
+    "$1" -r 'exit(PHP_VERSION_ID < 70400 ? 1 : 0);' >/dev/null 2>&1
+}
+
+find_php() {
+    if [ -n "${ZCD_PHP:-}" ] && is_usable_php "$ZCD_PHP"; then
+        printf '%s' "$ZCD_PHP"
+        return 0
+    fi
+
+    for _candidate in /opt/cpanel/ea-php*/root/usr/bin/php; do
+        [ -x "$_candidate" ] || continue
+        _newest=$_candidate
+    done
+
+    if [ -n "${_newest:-}" ] && is_usable_php "$_newest"; then
+        printf '%s' "$_newest"
+        return 0
+    fi
+
+    for _candidate in /usr/local/bin/php /usr/bin/php /bin/php; do
+        if is_usable_php "$_candidate"; then
+            printf '%s' "$_candidate"
+            return 0
+        fi
+    done
+
+    _resolved=$(command -v php 2>/dev/null) || _resolved=""
+
+    if [ -n "$_resolved" ] && is_usable_php "$_resolved"; then
+        printf '%s' "$_resolved"
+        return 0
+    fi
+
+    return 1
+}
+
+if [ "${1:-}" = "--version" ]; then
+    printf '%s\n' "$ZCD_SENTINEL_VERSION"
+    exit 0
+fi
+
+PHP_BIN=$(find_php) || PHP_BIN=""
+
+if [ -z "$PHP_BIN" ]; then
+    printf 'zcd-sentinel: no PHP 7.4 or newer interpreter was found, so alerts cannot run\n' >&2
+    exit 78
+fi
+
+if [ "${1:-}" = "--which-php" ]; then
+    printf '%s\n' "$PHP_BIN"
+    exit 0
+fi
+
+exec "$PHP_BIN" "$ENTRY" "$@"

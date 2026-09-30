@@ -1,0 +1,80 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, json
+          coverage: none
+          ini-values: error_reporting=E_ALL, display_errors=On
+
+      - name: Check syntax
+        run: |
+          find . -path ./.git -prune -o -name '*.php' -print -exec php -l {} \; > /dev/null
+
+      - name: Run the test suite
+        run: php tests/run.php
+
+  policy:
+    name: Source policy and shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, json
+          coverage: none
+
+      - name: Install shellcheck and dash
+        run: sudo apt-get update && sudo apt-get install -y shellcheck dash
+
+      - name: Check the source policy
+        run: php tools/lint.php
+
+      - name: Check every shell script
+        run: |
+          for script in install.sh uninstall.sh tools/lint.sh; do
+            shellcheck "$script"
+            bash -n "$script"
+          done
+          for script in payload/bin/zcd-run payload/bin/zcd-sentinel \
+                        tests/shell/runner-tests.sh tests/fixtures/fake-crontab; do
+            shellcheck -s sh "$script"
+            dash -n "$script"
+            bash -n "$script"
+          done
+
+      - name: Run the runner tests
+        run: sh tests/shell/runner-tests.sh
+
+      - name: Run the runner tests without flock, timeout or setsid
+        run: |
+          sudo mv /usr/bin/flock /usr/bin/flock.disabled
+          sudo mv /usr/bin/timeout /usr/bin/timeout.disabled
+          sudo mv /usr/bin/setsid /usr/bin/setsid.disabled
+          sh tests/shell/runner-tests.sh
+          sudo mv /usr/bin/flock.disabled /usr/bin/flock
+          sudo mv /usr/bin/timeout.disabled /usr/bin/timeout
+          sudo mv /usr/bin/setsid.disabled /usr/bin/setsid

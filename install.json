@@ -1,0 +1,14 @@
+[
+  {
+    "id": "zcd",
+    "name": "Cron Doctor",
+    "icon": "zcd.svg",
+    "type": "link",
+    "uri": "zcd/index.live.php",
+    "group_id": "advanced",
+    "featuremanager": 1,
+    "order": 100,
+    "target": "cPanel",
+    "description": "See whether your cron jobs really run, and fix the ones that do not."
+  }
+]

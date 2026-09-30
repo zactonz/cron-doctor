@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Cron Doctor">
+  <circle cx="24" cy="24" r="19" fill="none" stroke="#1a6ec4" stroke-width="3.2"/>
+  <path d="M24 12.5v12l7.5 4.5" fill="none" stroke="#1a6ec4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6 33h7l3.5-7 4.5 13 4-8h5" fill="none" stroke="#1f8a4c" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

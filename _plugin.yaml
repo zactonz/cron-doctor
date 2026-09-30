@@ -1,0 +1,6 @@
+entry:
+  category: "Advanced"
+  name: "Cron Doctor"
+  icon: "zcd.svg"
+  order: 1
+  url: "index.live.php"
