@@ -7,6 +7,7 @@ RUNNER="$ROOT/payload/bin/zcd-run"
 
 PASSED=0
 FAILED=0
+SKIPPED=0
 CURRENT=""
 BASE=""
 
@@ -25,9 +26,11 @@ link_tool() {
     return 1
 }
 
-link_tool timeout "$(command -v gtimeout 2>/dev/null || true)"
-link_tool setsid ""
-link_tool flock ""
+if [ -z "${ZCD_TEST_NO_TOOLS:-}" ]; then
+    link_tool timeout "$(command -v gtimeout 2>/dev/null || true)"
+    link_tool setsid ""
+    link_tool flock ""
+fi
 
 PATH="$TOOLBOX:$PATH"
 export PATH
@@ -39,6 +42,7 @@ printf 'tooling: timeout=%s setsid=%s flock=%s\n\n' \
 
 green() { printf '\033[32m%s\033[0m' "$1"; }
 red() { printf '\033[31m%s\033[0m' "$1"; }
+yellow() { printf '\033[33m%s\033[0m' "$1"; }
 
 start() {
     CURRENT=$1
@@ -53,6 +57,19 @@ ok() {
 nok() {
     FAILED=$((FAILED + 1))
     printf '    %s %s\n      %s\n' "$(red '✘')" "$1" "$2"
+}
+
+skip() {
+    SKIPPED=$((SKIPPED + 1))
+    printf '    %s %s\n      %s\n' "$(yellow '−')" "$1" "$2"
+}
+
+have_tool() {
+    command -v "$1" > /dev/null 2>&1
+}
+
+can_stop_a_process_group() {
+    have_tool timeout || have_tool setsid
 }
 
 assert_eq() {
@@ -80,6 +97,8 @@ assert_file_exists() {
 }
 
 setup() {
+    unset ZCD_DISABLE_FLOCK ZCD_DISABLE_TIMEOUT ZCD_DISABLE_SETSID
+
     BASE=$(mktemp -d 2>/dev/null) || BASE=$(mktemp -d -t zcd)
     mkdir -p "$BASE/bin" "$BASE/jobs" "$BASE/runs" "$BASE/state" "$BASE/locks"
     cp "$RUNNER" "$BASE/bin/zcd-run"
@@ -258,10 +277,10 @@ teardown
 start "locking works without flock"
 setup
 make_job "$JOB_A" "sleep 2"
-ZCD_DISABLE_FLOCK=1 run_job "$JOB_A" >/dev/null 2>&1 &
+env ZCD_DISABLE_FLOCK=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1 &
 FIRST=$!
 sleep 0.4
-ZCD_DISABLE_FLOCK=1 run_job "$JOB_A" >/dev/null 2>&1
+env ZCD_DISABLE_FLOCK=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 assert_eq "1" "$(meta_number "$(latest_meta "$JOB_A")" skipped)" "the directory lock also prevents overlap"
 assert_eq "directory" "$(meta_text "$(latest_meta "$JOB_A")" lock_style)" "the directory lock style is recorded"
 wait "$FIRST"
@@ -272,7 +291,7 @@ setup
 make_job "$JOB_A" "printf 'ran anyway\n'"
 mkdir -p "$BASE/locks/$JOB_A.lockdir"
 printf '999999\n' > "$BASE/locks/$JOB_A.lockdir/pid"
-ZCD_DISABLE_FLOCK=1 run_job "$JOB_A" >/dev/null 2>&1
+env ZCD_DISABLE_FLOCK=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 assert_eq "0" "$?" "the run completed"
 META=$(latest_meta "$JOB_A")
 assert_eq "0" "$(meta_number "$META" skipped)" "the run was not skipped"
@@ -282,7 +301,7 @@ teardown
 start "the lock is released when the job finishes"
 setup
 make_job "$JOB_A" "exit 0"
-ZCD_DISABLE_FLOCK=1 run_job "$JOB_A" >/dev/null 2>&1
+env ZCD_DISABLE_FLOCK=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 if [ -d "$BASE/locks/$JOB_A.lockdir" ]; then
     nok "the lock directory is removed" "lock directory still present"
 else
@@ -304,7 +323,7 @@ start "the timeout works without the timeout binary"
 setup
 make_job "$JOB_A" "sleep 30"
 set_conf "$JOB_A" timeout_seconds 1
-ZCD_DISABLE_TIMEOUT=1 run_job "$JOB_A" >/dev/null 2>&1
+env ZCD_DISABLE_TIMEOUT=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 assert_eq "124" "$?" "the watchdog returns the timeout exit code"
 assert_eq "1" "$(meta_number "$(latest_meta "$JOB_A")" timed_out)" "the watchdog records the timeout"
 teardown
@@ -317,7 +336,7 @@ set_conf "$JOB_A" timeout_seconds 30
 STARTED=$(date +%s)
 ROUND=0
 while [ "$ROUND" -lt 5 ]; do
-    ZCD_DISABLE_TIMEOUT=1 run_job "$JOB_A" >/dev/null 2>&1
+    env ZCD_DISABLE_TIMEOUT=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
     ROUND=$((ROUND + 1))
 done
 ELAPSED=$(( $(date +%s) - STARTED ))
@@ -341,12 +360,19 @@ chmod 600 "$BASE/jobs/$JOB_A.conf"
 set_conf "$JOB_A" timeout_seconds 1
 run_job "$JOB_A" >/dev/null 2>&1
 assert_eq "124" "$?" "the job timed out"
-assert_eq "0" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the runner reports no orphans"
-sleep 8
-if [ -f "$MARKER" ]; then
-    nok "background work is stopped with the job" "the marker file was created after the timeout"
+
+if can_stop_a_process_group; then
+    assert_eq "0" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the runner reports no orphans"
+    sleep 8
+
+    if [ -f "$MARKER" ]; then
+        nok "background work is stopped with the job" "the marker file was created after the timeout"
+    else
+        ok "background work is stopped with the job"
+    fi
 else
-    ok "background work is stopped with the job"
+    assert_eq "1" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the runner admits orphans are possible"
+    skip "background work is stopped with the job" "needs timeout or setsid, neither is installed"
 fi
 teardown
 
@@ -361,14 +387,21 @@ chmod 600 "$BASE/jobs/$JOB_A.cmd"
 : > "$BASE/jobs/$JOB_A.conf"
 chmod 600 "$BASE/jobs/$JOB_A.conf"
 set_conf "$JOB_A" timeout_seconds 1
-ZCD_DISABLE_TIMEOUT=1 run_job "$JOB_A" >/dev/null 2>&1
+env ZCD_DISABLE_TIMEOUT=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 assert_eq "124" "$?" "the job timed out"
-assert_eq "0" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the setsid watchdog reports no orphans"
-sleep 8
-if [ -f "$MARKER" ]; then
-    nok "the watchdog stops background work too" "the marker file was created after the timeout"
+
+if have_tool setsid; then
+    assert_eq "0" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the setsid watchdog reports no orphans"
+    sleep 8
+
+    if [ -f "$MARKER" ]; then
+        nok "the watchdog stops background work too" "the marker file was created after the timeout"
+    else
+        ok "the watchdog stops background work too"
+    fi
 else
-    ok "the watchdog stops background work too"
+    assert_eq "1" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the watchdog admits orphans are possible"
+    skip "the watchdog stops background work too" "needs setsid, which is not installed"
 fi
 teardown
 
@@ -376,10 +409,10 @@ start "the runner admits when it cannot guarantee a clean stop"
 setup
 make_job "$JOB_A" "sleep 30"
 set_conf "$JOB_A" timeout_seconds 1
-ZCD_DISABLE_TIMEOUT=1 ZCD_DISABLE_SETSID=1 run_job "$JOB_A" >/dev/null 2>&1
+env ZCD_DISABLE_TIMEOUT=1 ZCD_DISABLE_SETSID=1 "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 assert_eq "124" "$?" "the job still times out"
 assert_eq "1" "$(meta_number "$(latest_meta "$JOB_A")" orphans_possible)" "the limitation is recorded honestly"
-CAPS=$(ZCD_DISABLE_TIMEOUT=1 ZCD_DISABLE_SETSID=1 run_job --check)
+CAPS=$(env ZCD_DISABLE_TIMEOUT=1 ZCD_DISABLE_SETSID=1 "$BASE/bin/zcd-run" --check)
 assert_contains "timeout_is_reliable=0" "$CAPS" "the capability report warns about timeouts"
 teardown
 
@@ -426,7 +459,7 @@ exec $REALDATE "\$@"
 EOF
 chmod 755 "$BSDDATE/date"
 make_job "$JOB_A" "exit 0"
-PATH="$BSDDATE:$PATH" run_job "$JOB_A" >/dev/null 2>&1
+env PATH="$BSDDATE:$PATH" "$BASE/bin/zcd-run" "$JOB_A" >/dev/null 2>&1
 assert_eq "0" "$?" "the run still succeeds"
 META=$(latest_meta "$JOB_A")
 DURATION=$(meta_number "$META" duration_ms)
@@ -526,10 +559,16 @@ teardown
 
 printf '\n'
 
+if [ "$SKIPPED" -gt 0 ]; then
+    SUMMARY="$PASSED passed, $FAILED failed, $SKIPPED skipped"
+else
+    SUMMARY="$PASSED passed, $FAILED failed"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
-    printf '\033[42;30m PASS \033[0m  %s passed, %s failed\n' "$PASSED" "$FAILED"
+    printf '\033[42;30m PASS \033[0m  %s\n' "$SUMMARY"
     exit 0
 fi
 
-printf '\033[41;37m FAIL \033[0m  %s passed, %s failed\n' "$PASSED" "$FAILED"
+printf '\033[41;37m FAIL \033[0m  %s\n' "$SUMMARY"
 exit 1

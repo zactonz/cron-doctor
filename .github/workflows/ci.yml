@@ -74,7 +74,12 @@ jobs:
           sudo mv /usr/bin/flock /usr/bin/flock.disabled
           sudo mv /usr/bin/timeout /usr/bin/timeout.disabled
           sudo mv /usr/bin/setsid /usr/bin/setsid.disabled
-          sh tests/shell/runner-tests.sh
+
+          STATUS=0
+          ZCD_TEST_NO_TOOLS=1 sh tests/shell/runner-tests.sh || STATUS=1
+
           sudo mv /usr/bin/flock.disabled /usr/bin/flock
           sudo mv /usr/bin/timeout.disabled /usr/bin/timeout
           sudo mv /usr/bin/setsid.disabled /usr/bin/setsid
+
+          exit $STATUS

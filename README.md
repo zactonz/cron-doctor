@@ -223,6 +223,15 @@ php tools/build-css.php      # rebuild assets/zcd.css from the readable source
 php tools/lint.php           # source policy only
 ```
 
+The runner's tests adapt to the machine they run on. Where `flock`, `timeout` or `setsid` is missing they
+assert the degraded behaviour the runner actually promises and skip what cannot be tested, reporting the skip
+rather than passing quietly. `ZCD_TEST_NO_TOOLS=1` stops the harness borrowing those commands from Homebrew,
+so the minimal-server path can be exercised on a developer machine:
+
+```bash
+env -i HOME="$HOME" PATH=/usr/bin:/bin ZCD_TEST_NO_TOOLS=1 sh tests/shell/runner-tests.sh
+```
+
 The source policy check enforces the house standard: no comments anywhere in shipped code, no inline style
 attributes, no `eval`, `unserialize`, `system`, `exec`, `shell_exec`, `passthru` or backticks, and a
 stylesheet that matches its readable source. Explanation belongs here and in `docs/`, not in the code.
