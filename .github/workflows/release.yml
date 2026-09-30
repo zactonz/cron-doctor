@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to build and attach assets to
+        required: true
+        default: v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  assets:
+    name: Build and attach the release assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out which tag to build
+        run: echo "TAG=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
+
+      - name: Build the tarball from the tag
+        run: |
+          git archive --format=tar.gz --prefix=cron-doctor/ -o cron-doctor.tar.gz "$TAG"
+          sha256sum cron-doctor.tar.gz > cron-doctor.tar.gz.sha256
+          sha256sum -c cron-doctor.tar.gz.sha256
+
+      - name: Check the tarball installs the way the documentation says
+        run: |
+          mkdir -p verify && tar -xzf cron-doctor.tar.gz -C verify
+          test -d verify/cron-doctor
+          test -x verify/cron-doctor/install.sh
+          test -x verify/cron-doctor/payload/bin/zcd-run
+          test -x verify/cron-doctor/payload/bin/zcd-sentinel
+          test ! -e verify/cron-doctor/.git
+          bash -n verify/cron-doctor/install.sh
+
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 \
+            || gh release create "$TAG" --title "Cron Doctor ${TAG#v}" --notes "See CHANGELOG.md."
+          gh release upload "$TAG" cron-doctor.tar.gz cron-doctor.tar.gz.sha256 --clobber
+
+      - name: Confirm the documented download URL resolves
+        run: |
+          for attempt in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -L \
+              "https://github.com/${{ github.repository }}/releases/download/$TAG/cron-doctor.tar.gz")
+            [ "$CODE" = "200" ] && echo "download URL returns $CODE" && exit 0
+            sleep 5
+          done
+          echo "download URL never resolved" >&2
+          exit 1
