@@ -46,7 +46,6 @@ find "$PLUGIN_DIR" -type f -exec chmod 644 {} +
 chmod 755 "$PLUGIN_DIR/payload/bin/zcd-run" "$PLUGIN_DIR/payload/bin/zcd-sentinel"
 
 printf 'Registering the plugin with cPanel\n'
-/usr/local/cpanel/scripts/install_plugin "$PLUGIN_DIR/install.json"
 /usr/local/cpanel/scripts/install_plugin "$PLUGIN_DIR" --theme jupiter
 
 if [ -x /scripts/restartsrv_cpsrvd ]; then

@@ -112,6 +112,38 @@ foreach ($shellFiles as $relative) {
     }
 }
 
+foreach (['install.sh' => 'install_plugin', 'uninstall.sh' => 'uninstall_plugin'] as $relative => $script) {
+    $path = $root . '/' . $relative;
+
+    if (!is_file($path)) {
+        continue;
+    }
+
+    foreach (explode("\n", (string) file_get_contents($path)) as $number => $line) {
+        if (strpos(ltrim($line), '/usr/local/cpanel/scripts/' . $script . ' ') !== 0) {
+            continue;
+        }
+
+        if (preg_match('/\.json("|\s|$)/', $line) === 1) {
+            $failures[] = sprintf(
+                '%s:%d %s takes a directory or an archive, never a path to install.json',
+                $relative,
+                $number + 1,
+                $script
+            );
+        }
+
+        if (strpos($line, '--theme ') === false) {
+            $failures[] = sprintf(
+                '%s:%d %s needs an explicit --theme, otherwise it uses the server default',
+                $relative,
+                $number + 1,
+                $script
+            );
+        }
+    }
+}
+
 foreach (['assets/zcd.js', 'assets/zcd.un-compressed.css'] as $relative) {
     $contents = (string) file_get_contents($root . '/' . $relative);
 

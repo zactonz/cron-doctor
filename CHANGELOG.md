@@ -3,6 +3,25 @@
 All notable changes to Zactonz Cron Doctor are recorded here. This project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.1
+
+### Fixed
+
+- The installer passed the path of `install.json` to cPanel's `install_plugin`. That script takes a plugin
+  directory or an archive, so registration ended with `Unrecognized archive format.` and a non-zero status.
+  Under `set -euo pipefail` the installer stopped at that point, with the files in place but no entry
+  registered in cPanel. The call now passes the plugin directory, which is what the line after it already
+  did, and that redundant second call is gone.
+- `uninstall.sh` passed the same argument and stopped at the same point, so it did not unregister the
+  feature or remove the plugin directory.
+- `uninstall.sh` did not pass `--theme`, so it would have acted on whichever theme the server has set as its
+  default rather than on Jupiter, where the plugin is installed.
+
+### Added
+
+- The source policy check now rejects any call to `install_plugin` or `uninstall_plugin` that is given a
+  `.json` path or that omits `--theme`.
+
 ## 1.0.0
 
 First release.

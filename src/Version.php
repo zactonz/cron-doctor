@@ -6,7 +6,7 @@ namespace Zactonz\CronDoctor;
 
 final class Version
 {
-    public const NUMBER = '1.0.0';
+    public const NUMBER = '1.0.1';
 
     public const NAME = 'Zactonz Cron Doctor';
 

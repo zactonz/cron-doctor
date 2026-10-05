@@ -15,7 +15,7 @@ abort() {
 
 if [ -f "$PLUGIN_DIR/install.json" ] && [ -x /usr/local/cpanel/scripts/uninstall_plugin ]; then
     printf 'Unregistering the plugin\n'
-    /usr/local/cpanel/scripts/uninstall_plugin "$PLUGIN_DIR/install.json"
+    /usr/local/cpanel/scripts/uninstall_plugin "$PLUGIN_DIR" --theme jupiter
 fi
 
 if [ -d "$PLUGIN_DIR" ]; then
